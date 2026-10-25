@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>NXS // SYSTEM_VOID</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #ffffff;
+      color: #000000;
+      font-family: 'VT323', monospace;
+      touch-action: manipulation;
+    }
+
+    /* Scanlines and CRT curvature overlay */
+    .scanlines {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.45) 50%),
+                  linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+      background-size: 100% 4px, 6px 100%;
+      pointer-events: none;
+      z-index: 999;
+    }
+
+    .vignette {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      box-shadow: inset 0 0 100px rgba(0,0,0,0.85);
+      pointer-events: none;
+      z-index: 998;
+    }
+
+    #app-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      transition: background-color 0.1s ease, filter 0.05s linear;
+      overflow: hidden;
+    }
+
+    /* Screen Shake & Glitch Classes */
+    .shake-light {
+      animation: shakeAnim 0.18s ease-in-out;
+    }
+    .shake-hard {
+      animation: shakeHardAnim 0.45s ease-in-out;
+    }
+    @keyframes shakeAnim {
+      0% { transform: translate(0, 0); }
+      20% { transform: translate(-4px, 3px); }
+      40% { transform: translate(4px, -3px); }
+      60% { transform: translate(-3px, -2px); }
+      80% { transform: translate(3px, 2px); }
+      100% { transform: translate(0, 0); }
+    }
+    @keyframes shakeHardAnim {
+      0% { transform: translate(0, 0) rotate(0deg); }
+      15% { transform: translate(-10px, 8px) rotate(-1.5deg); }
+      30% { transform: translate(10px, -8px) rotate(1.5deg); }
+      45% { transform: translate(-12px, -6px) rotate(-1deg); }
+      60% { transform: translate(8px, 9px) rotate(1deg); }
+      75% { transform: translate(-6px, 4px) rotate(-0.5deg); }
+      100% { transform: translate(0, 0) rotate(0deg); }
+    }
+
+    /* Phase 1: Glitch text */
+    #initial-text {
+      font-size: 4.5rem;
+      font-family: 'Share Tech Mono', monospace;
+      letter-spacing: 12px;
+      color: #000000;
+      font-weight: 900;
+      transition: opacity 0.3s;
+      z-index: 10;
+    }
+
+    /* Phase 2: Character Visuals */
+    #character-stage {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      top: 0;
+      left: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.5s ease;
+      z-index: 20;
+    }
+
+    .character-silhouette-wrap {
+      position: relative;
+      width: 290px;
+      height: 380px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      transition: transform 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.2), filter 0.4s ease;
+      transform: scale(0.95);
+    }
+
+    .character-silhouette-wrap.straight-shadow {
+      filter: brightness(0) invert(1) drop-shadow(0 0 12px rgba(255, 255, 255, 0.8));
+      transform: scale(0.88) translateY(20px);
+    }
+
+    .character-silhouette-wrap.natural-pose {
+      filter: brightness(1) drop-shadow(0 0 18px rgba(255, 255, 255, 0.25));
+      transform: scale(1) translateY(0);
+    }
+
+    .character-img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      image-rendering: auto;
+      border-radius: 8px;
+    }
+
+    /* Floating Eye Pulse Animation */
+    .eye-glow {
+      position: absolute;
+      top: 25%;
+      left: 36%;
+      width: 44px;
+      height: 24px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255, 0, 60, 0.9) 0%, rgba(255, 0, 0, 0) 70%);
+      opacity: 0;
+      pointer-events: none;
+      mix-blend-mode: screen;
+      animation: pulseEye 2s infinite ease-in-out;
+    }
+    @keyframes pulseEye {
+      0%, 100% { transform: scale(1); opacity: 0.2; }
+      50% { transform: scale(1.6); opacity: 0.8; }
+    }
+
+    /* Tap prompt */
+    #tap-prompt {
+      position: absolute;
+      bottom: 24px;
+      right: 20px;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 0.65rem;
+      line-height: 1.4;
+      color: #ff3333;
+      text-shadow: 0 0 6px rgba(255, 50, 50, 0.8);
+      opacity: 0;
+      z-index: 30;
+      text-align: right;
+      animation: blinkText 0.9s infinite step-start;
+      pointer-events: none;
+    }
+    @keyframes blinkText {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.15; }
+    }
+
+    /* Glass Crack Canvas */
+    #crack-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    /* Phase 4: Undertale Dialogue Box */
+    #undertale-dialogue-box {
+      position: absolute;
+      bottom: 16px;
+      left: 12px;
+      right: 12px;
+      height: 175px;
+      background-color: #000000;
+      border: 4px solid #ffffff;
+      border-radius: 6px;
+      box-shadow: 0 0 0 2px #000000, 0 0 16px rgba(255, 255, 255, 0.3);
+      display: none;
+      flex-direction: row;
+      padding: 12px;
+      z-index: 150;
+      cursor: pointer;
+    }
+
+    .dialogue-avatar-container {
+      width: 82px;
+      height: 100%;
+      margin-right: 12px;
+      border: 2px solid #ffffff;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .dialogue-avatar {
+      width: 120%;
+      height: 120%;
+      object-fit: cover;
+      object-position: center 20%;
+      filter: grayscale(100%) contrast(150%);
+    }
+
+    .dialogue-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow: hidden;
+    }
+
+    .dialogue-text {
+      color: #ffffff;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 0.72rem;
+      line-height: 1.5;
+      letter-spacing: 0.5px;
+      word-break: break-word;
+      text-shadow: 1px 1px 0 #000;
+    }
+
+    .dialogue-cursor {
+      align-self: flex-end;
+      color: #ff3b30;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 0.7rem;
+      animation: bouncePrompt 0.6s infinite alternate;
+    }
+    @keyframes bouncePrompt {
+      0% { transform: translateY(0); opacity: 1; }
+      100% { transform: translateY(-4px); opacity: 0.4; }
+    }
+
+    /* Phase 5: Terminal Stage */
+    #terminal-stage {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #020202;
+      color: #70ff70;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.75rem;
+      line-height: 1.25;
+      padding: 14px;
+      overflow: hidden;
+      display: none;
+      flex-direction: column;
+      z-index: 200;
+      word-break: break-all;
+    }
+
+    .terminal-scroll {
+      flex: 1;
+      overflow-y: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      color: #92e092;
+    }
+
+    .terminal-scroll p {
+      margin-bottom: 2px;
+      white-space: pre-wrap;
+    }
+    .terminal-scroll .cached {
+      color: #69a769;
+    }
+    .terminal-scroll .highlight {
+      color: #ffffff;
+      font-weight: bold;
+    }
+
+    #fatal-error-overlay {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(180, 0, 0, 0.88);
+      display: none;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 24px;
+      z-index: 250;
+      animation: strobeGlitch 0.08s infinite alternate;
+    }
+    @keyframes strobeGlitch {
+      0% { background: rgba(180, 0, 0, 0.92); filter: hue-rotate(0deg); }
+      100% { background: rgba(10, 0, 0, 0.96); filter: hue-rotate(45deg); }
+    }
+
+    .fatal-title {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 1.45rem;
+      color: #ffff00;
+      text-shadow: 3px 3px #000, -2px -2px #ff0055, 0 0 16px #ff0000;
+      line-height: 1.4;
+      margin-bottom: 16px;
+    }
+
+    .fatal-desc {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.95rem;
+      color: #ffffff;
+      margin-top: 8px;
+    }
+
+    /* CRT Turn Off / Collapse Effect */
+    .crt-off {
+      animation: crtTurnOff 0.75s cubic-bezier(0.23, 1, 0.32, 1) forwards !important;
+    }
+    @keyframes crtTurnOff {
+      0% {
+        transform: scale(1, 1);
+        filter: brightness(1);
+      }
+      40% {
+        transform: scale(1, 0.004);
+        filter: brightness(5);
+        background: #ffffff;
+      }
+      80% {
+        transform: scale(0.005, 0.004);
+        filter: brightness(8);
+        background: #ffffff;
+      }
+      100% {
+        transform: scale(0, 0);
+        filter: brightness(0);
+        opacity: 0;
+      }
+    }
+
+    /* Banned IP State Screen */
+    #banned-screen {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background-color: #030303;
+      display: none;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 99999;
+      color: #ff2222;
+      text-align: center;
+      padding: 30px;
+    }
+    #banned-screen h1 {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 1.05rem;
+      line-height: 1.7;
+      margin-bottom: 20px;
+      letter-spacing: 2px;
+      text-shadow: 0 0 10px rgba(255, 34, 34, 0.8);
+    }
+    #banned-screen p {
+      font-family: 'Share Tech Mono', monospace;
+      color: #888888;
+      font-size: 0.85rem;
+      line-height: 1.6;
+    }
+
+    .reset-btn {
+      margin-top: 36px;
+      background: transparent;
+      border: 1px dashed #555555;
+      color: #666666;
+      font-family: 'Share Tech Mono', monospace;
+      padding: 8px 16px;
+      font-size: 0.7rem;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .reset-btn:active {
+      color: #ffffff;
+      border-color: #ffffff;
+    }
+
+    /* Audio unlock prompt overlay for iOS/Android autostart */
+    #start-tap-gate {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      z-index: 900;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="scanlines"></div>
+  <div class="vignette"></div>
+
+  <!-- Banned IP Lock Screen -->
+  <div id="banned-screen">
+    <h1>ACCESO DENEGADO<br><span style="color:#ffffff;">[ IP REGISTRADA ]</span></h1>
+    <p>IDENTIFICADOR NXS: 0x8849-F900B-VOID<br>SU DIRECCIÓN FUE BLOQUEADA PERMANENTEMENTE TRAS LA RUPTURA DEL ESPEJO.</p>
+    <p style="margin-top: 14px; font-size: 0.75rem; color: #444;">LA INTERFAZ NO PUEDE SER RESTAURADA EN ESTE NAVEGADOR.</p>
+    <button class="reset-btn" onclick="resetBan()">[MODO DEV: FORZAR DESBLOQUEO / REINICIAR]</button>
+  </div>
+
+  <div id="app-container">
+    <div id="start-tap-gate"></div>
+
+    <!-- Phase 1: Glitch text -->
+    <div id="initial-text">????</div>
+
+    <!-- Phase 2: Character Visuals -->
+    <div id="character-stage">
+      <div id="char-wrap" class="character-silhouette-wrap straight-shadow">
+        <img class="character-img" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAIp9YdJIb0Og-fiKM-OIj2ODDdQBc4yd89hF0GPPiIBJJiH1rrLobmRUJ1DMR__L2JGg0EOWPP52S11mI25VVY_DgMg4ArPnpwJw1cuGN3Qb1MERJ3oAfHH-16lVP9kONHcMJXcw3wy8UL9Pg_RKWSJ_aW57tVVgLOsoxBLFskhDDvjq2phEQp784oOPFSKtfCpXx5i8E68dPoLmXZR6d2JtIAyci915qCE1r7oAzYlO80eAQJI3sQj-6CIWFLMaF92w" alt="Entidad Misteriosa">
+        <div class="eye-glow"></div>
+      </div>
+    </div>
+
+    <!-- Glass Crack Canvas Layer -->
+    <canvas id="crack-canvas"></canvas>
+
+    <!-- Tap helper prompt -->
+    <div id="tap-prompt">TOCA LA PANTALLA<br>TRES VECES [0/3]</div>
+
+    <!-- Phase 4: Undertale Style Dialogue Box -->
+    <div id="undertale-dialogue-box">
+      <div class="dialogue-avatar-container">
+        <img class="dialogue-avatar" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAIp9YdJIb0Og-fiKM-OIj2ODDdQBc4yd89hF0GPPiIBJJiH1rrLobmRUJ1DMR__L2JGg0EOWPP52S11mI25VVY_DgMg4ArPnpwJw1cuGN3Qb1MERJ3oAfHH-16lVP9kONHcMJXcw3wy8UL9Pg_RKWSJ_aW57tVVgLOsoxBLFskhDDvjq2phEQp784oOPFSKtfCpXx5i8E68dPoLmXZR6d2JtIAyci915qCE1r7oAzYlO80eAQJI3sQj-6CIWFLMaF92w" alt="Avatar de Voz">
+      </div>
+      <div class="dialogue-content">
+        <div id="dialogue-text" class="dialogue-text"></div>
+        <div class="dialogue-cursor">&#9660;</div>
+      </div>
+    </div>
+
+    <!-- Phase 5: Terminal Screen -->
+    <div id="terminal-stage">
+      <div id="terminal-content" class="terminal-scroll"></div>
+      <div id="fatal-error-overlay">
+        <div class="fatal-title">FATAL_ERROR 404<br>NOT FOUND</div>
+        <div class="fatal-desc">[CORE MEMORY DUMP CORRUPTED]<br>TERMINATING HOST CONNECTION...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ========================================================
+       1. VERIFICACIÓN DE ESTADO (LOCALSTORAGE / BAN SIMULADO)
+       ======================================================== */
+    const BAN_KEY = 'NXS_SYSTEM_IP_BAN_STATUS';
+    if (localStorage.getItem(BAN_KEY) === 'LOCKED') {
+      document.getElementById('banned-screen').style.display = 'flex';
+      document.getElementById('app-container').style.display = 'none';
+    }
+
+    function resetBan() {
+      localStorage.removeItem(BAN_KEY);
+      location.reload();
+    }
+
+    /* ========================================================
+       2. WEB AUDIO API SYNTHESIZERS (GASTER VOICE & GLASS SFX)
+       ======================================================== */
+    let audioCtx = null;
+
+    function initAudio() {
+      if (!audioCtx) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContextClass();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    // GASTER / Glitch Voice Generator
+    function playGasterBlip() {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      const filter = audioCtx.createBiquadFilter();
+
+      // Pitch aleatorio profundo y robótico con armónicos cuadrados/diente de sierra
+      const freqs = [62, 85, 98, 110, 130, 164, 185, 220];
+      const selectedFreq = freqs[Math.floor(Math.random() * freqs.length)];
+
+      osc.type = Math.random() > 0.4 ? 'sawtooth' : 'square';
+      osc.frequency.setValueAtTime(selectedFreq, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(selectedFreq * (0.6 + Math.random() * 0.8), audioCtx.currentTime + 0.08);
+
+      // Lowpass resonante para sonido vocal gutural/alienígena estilo Undertale
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(450 + Math.random() * 500, audioCtx.currentTime);
+      filter.Q.setValueAtTime(8, audioCtx.currentTime);
+
+      gain.gain.setValueAtTime(0.28, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.09);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.095);
+    }
+
+    // Ambient Static Noise Burst
+    function playStaticBurst(duration = 0.35, volume = 0.25) {
+      if (!audioCtx) return;
+      const bufferSize = audioCtx.sampleRate * duration;
+      const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.4));
+      }
+
+      const noise = audioCtx.createBufferSource();
+      noise.buffer = buffer;
+
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 800 + Math.random() * 1200;
+      filter.Q.value = 3.0;
+
+      const gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      noise.start();
+    }
+
+    // Glass Tap & Shatter Synthesizers
+    function playGlassCrackSound(intensity = 1) {
+      if (!audioCtx) return;
+      // High pitch crystalline resonant click
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(2400 + Math.random() * 1200, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.12);
+
+      gain.gain.setValueAtTime(0.4 * intensity, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.13);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.14);
+
+      // Harsh snap
+      playStaticBurst(0.1, 0.3 * intensity);
+    }
+
+    function playGlassShatterSound() {
+      if (!audioCtx) return;
+      // Multiple crystalline frequencies exploding simultaneously
+      const freqs = [1800, 2400, 3100, 4200, 5400, 6800, 850];
+      freqs.forEach((f, idx) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = idx % 2 === 0 ? 'sine' : 'sawtooth';
+        osc.frequency.setValueAtTime(f + (Math.random() * 400 - 200), audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(120, audioCtx.currentTime + 0.45);
+
+        gain.gain.setValueAtTime(0.35, audioCtx.currentTime + (idx * 0.015));
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5 + (idx * 0.03));
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(audioCtx.currentTime + (idx * 0.015));
+        osc.stop(audioCtx.currentTime + 0.7);
+      });
+
+      // Long loud crash burst
+      playStaticBurst(0.65, 0.6);
+    }
+
+    // Terminal hum / error drone
+    function playFatalAlarm() {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(140, audioCtx.currentTime);
+      osc.frequency.setValueAtTime(280, audioCtx.currentTime + 0.12);
+      osc.frequency.setValueAtTime(140, audioCtx.currentTime + 0.24);
+
+      gain.gain.setValueAtTime(0.45, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1.2);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 1.3);
+    }
+
+    /* ========================================================
+       3. CRACK CANVAS (ROTURA PROCEDIMENTAL DEL CRISTAL)
+       ======================================================== */
+    const canvas = document.getElementById('crack-canvas');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+
+    function resizeCanvas() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    const cracks = [];
+
+    function addCrackPoint(cx, cy, branches = 5, depth = 35) {
+      for (let i = 0; i < branches; i++) {
+        let angle = (Math.PI * 2 / branches) * i + (Math.random() * 0.6 - 0.3);
+        let currX = cx;
+        let currY = cy;
+        const segments = [];
+
+        for (let j = 0; j < depth; j++) {
+          let step = 10 + Math.random() * 18;
+          angle += (Math.random() - 0.5) * 0.75;
+          let nextX = currX + Math.cos(angle) * step;
+          let nextY = currY + Math.sin(angle) * step;
+          segments.push({ x1: currX, y1: currY, x2: nextX, y2: nextY });
+          currX = nextX;
+          currY = nextY;
+        }
+        cracks.push(segments);
+      }
+      renderCracks();
+    }
+
+    function renderCracks() {
+      ctx.clearRect(0, 0, width, height);
+
+      // Glass tinting line & bright shards
+      ctx.lineWidth = 1.8;
+      ctx.lineCap = 'round';
+
+      cracks.forEach(branch => {
+        ctx.beginPath();
+        branch.forEach(seg => {
+          ctx.moveTo(seg.x1, seg.y1);
+          ctx.lineTo(seg.x2, seg.y2);
+        });
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+        ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+        ctx.shadowBlur = 4;
+        ctx.stroke();
+
+        // Dark refraction reflection beside it
+        ctx.beginPath();
+        branch.forEach(seg => {
+          ctx.moveTo(seg.x1 + 1.5, seg.y1 + 1.5);
+          ctx.lineTo(seg.x2 + 1.5, seg.y2 + 1.5);
+        });
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.shadowBlur = 0;
+        ctx.stroke();
+      });
+    }
+
+    /* ========================================================
+       4. SECUENCIA NARRATIVA PRINCIPAL
+       ======================================================== */
+    const app = document.getElementById('app-container');
+    const initText = document.getElementById('initial-text');
+    const charStage = document.getElementById('character-stage');
+    const charWrap = document.getElementById('char-wrap');
+    const tapPrompt = document.getElementById('tap-prompt');
+    const dialogueBox = document.getElementById('undertale-dialogue-box');
+    const dialogueText = document.getElementById('dialogue-text');
+    const startGate = document.getElementById('start-tap-gate');
+    const terminalStage = document.getElementById('terminal-stage');
+    const terminalContent = document.getElementById('terminal-content');
+    const fatalOverlay = document.getElementById('fatal-error-overlay');
+
+    let tapCount = 0;
+    let sequenceActive = false;
+    let dialogueIndex = 0;
+    let isTyping = false;
+    let typingTimer = null;
+
+    const dialogues = [
+      "Debes ser alguno de los idiotas que NXS solicito a que admiraran la tortura nuestra",
+      "...Un labirinto de espejos infinitos donde cada reflejo inventa un universo nuevo, y el tiempo mismo se pliega en el silencio de un pensamiento...no te mostrare nada, ni siquiera por ordenes de NXS"
+    ];
+
+    // Desencadenar Fase 1 de inmediato o al primer toque
+    function startExperience() {
+      if (sequenceActive) return;
+      sequenceActive = true;
+      initAudio();
+      startGate.style.display = 'none';
+
+      // Fase 1: Inversión de color a los 1.5 segundos
+      setTimeout(() => {
+        // Sonidos estáticos y murmullos glitch estilo GASTER
+        playStaticBurst(0.4, 0.35);
+        for (let k = 0; k < 6; k++) {
+          setTimeout(() => playGasterBlip(), k * 90);
+        }
+
+        app.style.backgroundColor = '#000000';
+        initText.style.color = '#ffffff';
+        initText.style.textShadow = '0 0 16px #ffffff';
+        app.classList.add('shake-light');
+
+        setTimeout(() => {
+          app.classList.remove('shake-light');
+          initText.style.opacity = '0';
+
+          // Fase 2: Aparición de la Sombra del Personaje
+          setTimeout(initCharacterPhase, 600);
+        }, 1200);
+
+      }, 1500);
+    }
+
+    startGate.addEventListener('pointerdown', startExperience);
+    window.addEventListener('DOMContentLoaded', () => {
+      // Auto arrancar con timeout fallback
+      setTimeout(startExperience, 400);
+    });
+
+    function initCharacterPhase() {
+      charStage.style.opacity = '1';
+      playGasterBlip();
+
+      // Transición de silueta recta a la pose original del personaje
+      setTimeout(() => {
+        charWrap.classList.remove('straight-shadow');
+        charWrap.classList.add('natural-pose');
+        playStaticBurst(0.2, 0.2);
+
+        // Mostrar indicador de ayuda parpadeante
+        setTimeout(() => {
+          tapPrompt.style.opacity = '1';
+          enableTouchTaps();
+        }, 700);
+
+      }, 800);
+    }
+
+    // Fase 3: Interacción táctil de 3 toques con rotura de vidrio
+    function enableTouchTaps() {
+      const handleTap = (e) => {
+        initAudio();
+        tapCount++;
+        tapPrompt.innerText = `TOCA LA PANTALLA\nTRES VECES [${tapCount}/3]`;
+
+        const touchX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : width / 2);
+        const touchY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : height / 2);
+
+        if (tapCount === 1) {
+          app.classList.add('shake-light');
+          setTimeout(() => app.classList.remove('shake-light'), 200);
+          playGlassCrackSound(1.0);
+          addCrackPoint(touchX, touchY, 6, 20);
+        } else if (tapCount === 2) {
+          app.classList.add('shake-light');
+          setTimeout(() => app.classList.remove('shake-light'), 200);
+          playGlassCrackSound(1.5);
+          addCrackPoint(touchX, touchY, 8, 30);
+          addCrackPoint(width / 2, height / 2, 4, 18);
+        } else if (tapCount >= 3) {
+          window.removeEventListener('pointerdown', handleTap);
+          tapPrompt.style.display = 'none';
+
+          // Rotura catastrófica total
+          app.classList.add('shake-hard');
+          playGlassShatterSound();
+
+          // Grietas masivas en toda la pantalla
+          addCrackPoint(touchX, touchY, 12, 45);
+          addCrackPoint(width * 0.2, height * 0.3, 10, 40);
+          addCrackPoint(width * 0.8, height * 0.7, 10, 40);
+          addCrackPoint(width * 0.5, height * 0.5, 14, 50);
+
+          setTimeout(() => {
+            app.classList.remove('shake-hard');
+            initDialoguePhase();
+          }, 600);
+        }
+      };
+
+      window.addEventListener('pointerdown', handleTap);
+    }
+
+    /* ========================================================
+       5. FASE 4: DIÁLOGOS ESTILO UNDERTALE
+       ======================================================== */
+    function initDialoguePhase() {
+      // Ajustar posición del personaje hacia la parte inferior/interfaz
+      charWrap.style.transform = 'scale(0.85) translateY(-50px)';
+      dialogueBox.style.display = 'flex';
+      renderDialogue(0);
+
+      dialogueBox.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        initAudio();
+        if (isTyping) {
+          // Si el jugador hace tap mientras escribe, completar la frase al instante
+          clearInterval(typingTimer);
+          dialogueText.textContent = dialogues[dialogueIndex];
+          isTyping = false;
+        } else {
+          dialogueIndex++;
+          if (dialogueIndex < dialogues.length) {
+            renderDialogue(dialogueIndex);
+          } else {
+            dialogueBox.style.display = 'none';
+            initTerminalPhase();
+          }
+        }
+      });
+    }
+
+    function renderDialogue(idx) {
+      isTyping = true;
+      dialogueText.textContent = '';
+      const fullText = dialogues[idx];
+      let charPos = 0;
+
+      clearInterval(typingTimer);
+      typingTimer = setInterval(() => {
+        if (charPos < fullText.length) {
+          dialogueText.textContent += fullText.charAt(charPos);
+          // SFX de voz robótico cada 2 caracteres para no saturar
+          if (charPos % 2 === 0 && fullText.charAt(charPos).trim() !== '') {
+            playGasterBlip();
+          }
+          charPos++;
+        } else {
+          clearInterval(typingTimer);
+          isTyping = false;
+        }
+      }, 34);
+    }
+
+    /* ========================================================
+       6. FASE 5: TERMINAL DE REFERENCIA & FATAL_ERROR
+       ======================================================== */
+    const terminalLogs = [
+      "Using cached https://www.piwheels.org/simple/adafruit-circuitpython-neopixel/adafruit_circuitpython_neopixel-6.4.2-py3-none-any.whl.metadata (6.2 kB)",
+      "Collecting lgpio",
+      "  Using cached lgpio-0.2.2.0.tar.gz (90 kB)",
+      "  Installing build dependencies ... done",
+      "  Getting requirements to build wheel ... done",
+      "  Preparing metadata (pyproject.toml) ... done",
+      "Collecting Adafruit-Blinka (from adafruit-circuitpython-neopixel)",
+      "  Using cached https://www.piwheels.org/simple/adafruit-blinka/Adafruit_Blinka-9.2.0-py3-none-any.whl.metadata (5.9 kB)",
+      "Collecting adafruit-circuitpython-pixelbuf (from adafruit-circuitpython-neopixel)",
+      "  Using cached https://www.piwheels.org/simple/adafruit-circuitpython-pixelbuf/adafruit_circuitpython_pixelbuf-2.1.0-py3-none-any.whl.metadata (4.3 kB)",
+      "Collecting Adafruit-PlatformDetect>=3.89.1 (from Adafruit-Blinka->adafruit-circuitpython-neopixel)",
+      "Collecting Adafruit-PureIO>=1.1.7 (from Adafruit-Blinka->adafruit-circuitpython-neopixel)",
+      "Collecting binho-host-adapter>=0.1.6 (from Adafruit-Blinka->adafruit-circuitpython-neopixel)",
+      "Collecting pyftdi>=0.40.0 (from Adafruit-Blinka->adafruit-circuitpython-neopixel)",
+      "Collecting adafruit-circuitpython-typing (from adafruit-circuitpython-neopixel)",
+      "Collecting sysv_ipc>=1.1.0 (from Adafruit-Blinka->adafruit-circuitpython-neopixel)",
+      "Collecting RPi.GPIO (from Adafruit-circuitpython-neopixel)",
+      "Collecting Adafruit-Blinka-Raspberry_Pi5-Neopixel (from Adafruit-Blinka->adafruit-circuitpython-neopixel)",
+      "Collecting pyserial (from binho-host-adapter>=0.1.6->Adafruit-Blinka->adafruit-circuitpython-neopixel)",
+      "Collecting pyusb!=1.2.0,>=1.0.0 (from pyftdi>=0.40.0->Adafruit-Blinka->adafruit-circuitpython-neopixel)",
+      "Collecting adafruit-circuitpython-busdevice (from adafruit-circuitpython-typing->Adafruit-Blinka->adafruit-circuitpython-neopixel)",
+      "Collecting adafruit-circuitpython-requests (from adafruit-circuitpython-typing->Adafruit-Blinka->adafruit-circuitpython-neopixel)",
+      "Collecting typing_extensions>=4.0 (from adafruit-circuitpython-typing->Adafruit-Blinka->adafruit-circuitpython-neopixel)",
+      "Collecting Adafruit-CircuitPython-ConnectionManager (from adafruit-circuitpython-connectionmanager)",
+      "Building wheels for collected packages: lgpio",
+      "Building wheel for lgpio (pyproject.toml) ... \u00A5",
+      "WARN: NXS CORE BUFFER OVERFLOW AT 0x000F489A",
+      "ERR: CORRUPTED PIPELINE STREAM DETECTED",
+      "CRITICAL: MEMORY LEAK IN SECTOR 7G",
+      "SECURITY_VIOLATION: UNAUTHORIZED EYE OBSERVER",
+      "SYSTEM_INTERRUPT: TRACE_ROUTE IP 192.168.0.244 CAPTURED"
+    ];
+
+    function initTerminalPhase() {
+      // Ocultar capas previas y mostrar terminal
+      charStage.style.display = 'none';
+      canvas.style.display = 'none';
+      terminalStage.style.display = 'flex';
+
+      let lineIdx = 0;
+      const logInterval = setInterval(() => {
+        if (lineIdx < terminalLogs.length) {
+          const p = document.createElement('p');
+          const text = terminalLogs[lineIdx];
+          p.textContent = text;
+          if (text.includes('Using cached')) {
+            p.className = 'cached';
+          } else if (text.includes('Collecting') || text.includes('WARN')) {
+            p.className = 'highlight';
+          }
+          terminalContent.appendChild(p);
+          terminalContent.scrollTop = terminalContent.scrollHeight;
+
+          // Sonido de tipeo rápido de consola
+          if (lineIdx % 3 === 0) {
+            playGasterBlip();
+          }
+          lineIdx++;
+        } else {
+          clearInterval(logInterval);
+          triggerFatalCollapse();
+        }
+      }, 70);
+    }
+
+    function triggerFatalCollapse() {
+      // Mostrar FATAL_ERROR 404 NOT FOUND
+      fatalOverlay.style.display = 'flex';
+      playFatalAlarm();
+      app.classList.add('shake-hard');
+
+      setTimeout(() => {
+        // Colapso CRT apagándose
+        app.classList.add('crt-off');
+        playStaticBurst(0.8, 0.7);
+
+        // Bloqueo persistente simulado en LocalStorage
+        try {
+          localStorage.setItem(BAN_KEY, 'LOCKED');
+        } catch(e){}
+
+        setTimeout(() => {
+          document.getElementById('banned-screen').style.display = 'flex';
+          app.style.display = 'none';
+        }, 850);
+
+      }, 1600);
+    }
+  </script>
+</body>
+</html>
